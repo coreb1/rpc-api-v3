@@ -1,0 +1,11 @@
+{
+  "name": "@app/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@app/contract": "workspace:*",
+    "@orpc/client": "^1.16.2",
+    "@orpc/contract": "^1.16.2"
+  }
+}
