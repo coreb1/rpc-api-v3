@@ -1,4 +1,5 @@
 import type { InferContractRouterInputs, InferContractRouterOutputs } from '@orpc/contract'
+import { dealsContract } from './deals'
 import { eventsContract } from './events'
 import { ticketsContract } from './tickets'
 
@@ -8,6 +9,7 @@ import { ticketsContract } from './tickets'
  */
 export const contract = {
   events: eventsContract,
+  deals: dealsContract,
   tickets: ticketsContract,
 }
 
@@ -16,5 +18,6 @@ export type RpcInputs = InferContractRouterInputs<Contract>
 export type RpcOutputs = InferContractRouterOutputs<Contract>
 
 export * from './events'
+export * from './deals'
 export * from './tickets'
 export * from './common'

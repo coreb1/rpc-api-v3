@@ -69,8 +69,9 @@ export class PostgresEventRepository implements EventRepository {
     return row ?? null
   }
 
-  async exists(id: string): Promise<boolean> {
-    const [row] = await this.database.db.select({ found: sql<number>`1` }).from(events).where(eq(events.id, id)).limit(1)
+  async exists(id: string, options?: { lockAgainstDelete?: boolean }): Promise<boolean> {
+    const query = this.database.db.select({ found: sql<number>`1` }).from(events).where(eq(events.id, id)).limit(1)
+    const [row] = options?.lockAgainstDelete ? await query.for('key share') : await query
     return row !== undefined
   }
 

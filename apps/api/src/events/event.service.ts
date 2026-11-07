@@ -30,7 +30,11 @@ export interface EventRepository {
 
   listSummaries(page: Page): Promise<PageResult<EventSummary>>
   findDetails(id: string): Promise<EventDetails | null>
-  exists(id: string): Promise<boolean>
+  /**
+   * `lockAgainstDelete` (SELECT … FOR KEY SHARE): the event can't be deleted until the
+   * caller's transaction ends, so rows that reference it can be added safely. Edits still go through.
+   */
+  exists(id: string, options?: { lockAgainstDelete?: boolean }): Promise<boolean>
 }
 
 /** Everything you can do with events. One method per use case. */
@@ -81,7 +85,7 @@ export class EventService {
     return this.tx.run(async () => {
       const event = await this.load(id)
       event.delete()
-      await this.events.remove(id) // tickets are removed by the FK cascade
+      await this.events.remove(id) // deals and tickets are removed by the FK cascade
       await this.outbox.append(event.pullEvents(), actor)
     })
   }

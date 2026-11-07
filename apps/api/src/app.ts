@@ -5,6 +5,9 @@ import { Elysia, type AnyElysia } from 'elysia'
 import { SessionService } from './auth/session.service'
 import { ConfigSchema, type Config } from './config'
 import { Database } from './database'
+import { PostgresDealRepository } from './deals/deal.repository'
+import { DealRpc } from './deals/deal.rpc'
+import { DealService } from './deals/deal.service'
 import { PostgresEventRepository } from './events/event.repository'
 import { EventRpc } from './events/event.rpc'
 import { EventService } from './events/event.service'
@@ -36,11 +39,13 @@ export class App {
     const outbox = new PostgresOutboxWriter(database)
     const eventRepository = new PostgresEventRepository(database)
     const eventService = new EventService(eventRepository, outbox, database)
+    const dealService = new DealService(new PostgresDealRepository(database), eventRepository, outbox, database)
     const ticketService = new TicketService(new PostgresTicketRepository(database), eventRepository, outbox, database)
 
     const rpc = new Rpc(new SessionService(database))
     return rpc.os.router({
       events: new EventRpc(rpc, eventService).routes(),
+      deals: new DealRpc(rpc, dealService).routes(),
       tickets: new TicketRpc(rpc, ticketService).routes(),
     })
   }

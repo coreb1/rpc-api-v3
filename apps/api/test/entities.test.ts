@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { Deal, Money } from '../src/deals/deal'
 import { Event, EventSchedule } from '../src/events/event'
 import { BusinessRuleViolation } from '../src/shared/domain'
 import { Ticket, type TicketStatus } from '../src/tickets/ticket'
@@ -82,5 +83,42 @@ describe('Ticket', () => {
     t.update({ holderEmail: 'BOB@example.com' })
     expect(t.holderEmail).toBe('bob@example.com')
     expect(t.pullEvents()[0]!.payload).not.toHaveProperty('holderEmail')
+  })
+})
+
+describe('Deal', () => {
+  const newDeal = () =>
+    Deal.create({
+      eventId: crypto.randomUUID(),
+      name: ' Early bird ',
+      price: { amount: 1500, currency: 'eur' },
+      quantity: 100,
+    })
+
+  test('create() normalizes input and records deal.created with the price in cents', () => {
+    const deal = newDeal()
+    expect(deal.name).toBe('Early bird')
+    expect(deal.price.currency).toBe('EUR')
+    const [created] = deal.pullEvents()
+    expect(created!.type).toBe('deal.created')
+    expect(created!.payload).toMatchObject({ name: 'Early bird', price: { amount: 1500, currency: 'EUR' } })
+  })
+
+  test('a no-op update records nothing; a real one reports what changed', () => {
+    const deal = newDeal()
+    deal.pullEvents()
+    deal.update({ name: 'Early bird', price: { amount: 1500, currency: 'EUR' } })
+    expect(deal.pullEvents()).toHaveLength(0)
+    deal.update({ price: { amount: 2000, currency: 'EUR' }, quantity: 50 })
+    expect(deal.pullEvents()[0]!.payload).toMatchObject({ changed: ['price', 'quantity'] })
+  })
+
+  test('rules', () => {
+    expect(ruleOf(() => newDeal().update({ name: '  ' }))).toBe('deal.name_required')
+    expect(ruleOf(() => newDeal().update({ quantity: 0 }))).toBe('deal.quantity_invalid')
+    expect(ruleOf(() => newDeal().update({ quantity: 1.5 }))).toBe('deal.quantity_invalid')
+    expect(ruleOf(() => Money.of(-1, 'EUR'))).toBe('money.amount_invalid')
+    expect(ruleOf(() => Money.of(9.99, 'EUR'))).toBe('money.amount_invalid')
+    expect(ruleOf(() => Money.of(100, 'euro'))).toBe('money.currency_invalid')
   })
 })

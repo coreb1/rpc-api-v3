@@ -9,6 +9,7 @@ import {
   pgTable,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core'
 
@@ -41,7 +42,7 @@ export const sessions = pgTable(
   (t) => [index('sessions_user_idx').on(t.userId)],
 )
 
-// ---------- events & tickets ----------
+// ---------- events, deals & tickets ----------
 export const events = pgTable(
   'events',
   {
@@ -58,6 +59,31 @@ export const events = pgTable(
     index('events_starts_at_idx').on(t.startsAt),
     // The entity enforces it; the database refuses bad rows anyway.
     check('events_ends_after_start', sql`${t.endsAt} > ${t.startsAt}`),
+  ],
+)
+
+export const deals = pgTable(
+  'deals',
+  {
+    id: uuid().primaryKey(),
+    eventId: uuid()
+      .notNull()
+      .references(() => events.id, { onDelete: 'cascade' }),
+    name: text().notNull(),
+    description: text(),
+    /** Minor units (cents). With `priceCurrency`, becomes one Money. */
+    priceAmount: integer().notNull(),
+    priceCurrency: text().notNull(),
+    quantity: integer().notNull(),
+    createdAt: tstz().notNull(),
+    updatedAt: tstz().notNull(),
+  },
+  (t) => [
+    // The service checks it first for a clean error; this catches concurrent writes.
+    uniqueIndex('deals_event_name_uq').on(t.eventId, sql`lower(${t.name})`),
+    index('deals_event_idx').on(t.eventId, t.createdAt),
+    check('deals_price_amount_non_negative', sql`${t.priceAmount} >= 0`),
+    check('deals_quantity_positive', sql`${t.quantity} > 0`),
   ],
 )
 
@@ -109,4 +135,5 @@ export const outboxMessages = pgTable(
 )
 
 export type EventRow = typeof events.$inferSelect
+export type DealRow = typeof deals.$inferSelect
 export type TicketRow = typeof tickets.$inferSelect

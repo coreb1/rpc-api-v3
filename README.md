@@ -16,6 +16,7 @@ events/
   event.service.ts     EventService: every event use case (+ read models, repository interface)
   event.repository.ts  PostgresEventRepository: the only class that knows the events table
   event.rpc.ts         EventRpc: contract procedures → EventService
+deals/                 same four files; Money value object; name unique per event
 tickets/               same four files
 shared/domain.ts       AggregateRoot, DomainEvent, errors
 shared/ports.ts        interfaces services depend on (Transaction, OutboxWriter, Page…)
@@ -66,8 +67,8 @@ await this.events.update(event)                 }  // SELECT id, title, venue, s
 
 | procedure | auth |
 |---|---|
-| `events.list`, `events.get` | public |
-| `events.create/update/delete`, all `tickets.*` | session |
+| `events.list`, `events.get`, `deals.listByEvent`, `deals.get` | public |
+| `events.create/update/delete`, `deals.create/update/delete`, all `tickets.*` | session |
 
 Typed errors: `UNAUTHORIZED` (401), `NOT_FOUND {resource,id}` (404), `BUSINESS_RULE_VIOLATION {rule}` (422).
 

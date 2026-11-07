@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test'
 import type { Contract } from '@app/contract'
-import { createORPCClient, isDefinedError, safe } from '@orpc/client'
+import { createORPCClient, isDefinedError, ORPCError, safe } from '@orpc/client'
 import { RPCLink } from '@orpc/client/fetch'
 import type { ContractRouterClient } from '@orpc/contract'
 import { createRouterClient } from '@orpc/server'
@@ -130,6 +130,85 @@ describe('events', () => {
     const id = crypto.randomUUID()
     const [error] = await safe(anon().events.get({ id }))
     expect(isDefinedError(error) && error.code === 'NOT_FOUND' && error.data).toEqual({ resource: 'event', id })
+  })
+})
+
+describe('deals', () => {
+  const vip = { name: 'VIP', price: { amount: 5000, currency: 'EUR' }, quantity: 50 }
+  const ruleOf = (error: unknown) =>
+    error instanceof ORPCError && error.code === 'BUSINESS_RULE_VIOLATION'
+      ? (error.data as { rule: string }).rule
+      : undefined
+
+  test('create / list (public) / get / update / delete, each write in the outbox', async () => {
+    const c = authed()
+    const event = await c.events.create(newEvent)
+    const deal = await c.deals.create({ eventId: event.id, ...vip })
+    await c.deals.create({ eventId: event.id, name: 'Early bird', price: { amount: 1500, currency: 'EUR' }, quantity: 100 })
+
+    const page = await anon().deals.listByEvent({ eventId: event.id })
+    expect(page.total).toBe(2)
+    expect(page.items.map((d) => d.name)).toEqual(['VIP', 'Early bird'])
+    expect(Object.keys(page.items[0]!).sort()).toEqual(['id', 'name', 'price', 'quantity'])
+
+    expect((await anon().deals.get({ id: deal.id })).price).toEqual({ amount: 5000, currency: 'EUR' })
+    expect((await c.deals.update({ id: deal.id, patch: { quantity: 40 } })).quantity).toBe(40)
+    await c.deals.delete({ id: deal.id })
+
+    expect((await outbox()).map((m) => m.type)).toEqual([
+      'event.created',
+      'deal.created',
+      'deal.created',
+      'deal.updated',
+      'deal.deleted',
+    ])
+  })
+
+  test('writes require a session', async () => {
+    const [error] = await safe(anon().deals.create({ eventId: crypto.randomUUID(), ...vip }))
+    expect(isDefinedError(error) && error.code).toBe('UNAUTHORIZED')
+  })
+
+  test('the event must exist', async () => {
+    const eventId = crypto.randomUUID()
+    const [error] = await safe(authed().deals.create({ eventId, ...vip }))
+    expect(isDefinedError(error) && error.code === 'NOT_FOUND' && error.data).toEqual({ resource: 'event', id: eventId })
+    expect(await outbox()).toHaveLength(0)
+  })
+
+  test('names are unique per event, ignoring case', async () => {
+    const c = authed()
+    const event = await c.events.create(newEvent)
+    const other = await c.events.create(newEvent)
+    const deal = await c.deals.create({ eventId: event.id, ...vip })
+
+    const [error] = await safe(c.deals.create({ eventId: event.id, ...vip, name: ' vip ' }))
+    expect(ruleOf(error)).toBe('deal.name_taken')
+    await c.deals.create({ eventId: other.id, ...vip }) // another event: fine
+
+    // Renaming: onto another deal's name is refused; changing your own name's case is fine.
+    const early = await c.deals.create({ eventId: event.id, ...vip, name: 'Early bird' })
+    const [renameError] = await safe(c.deals.update({ id: early.id, patch: { name: 'Vip' } }))
+    expect(ruleOf(renameError)).toBe('deal.name_taken')
+    expect((await c.deals.update({ id: deal.id, patch: { name: 'vip' } })).name).toBe('vip')
+  })
+
+  test('concurrent creates with the same name: exactly one wins', async () => {
+    const c = authed()
+    const event = await c.events.create(newEvent)
+    const results = await Promise.all([1, 2, 3].map(() => safe(c.deals.create({ eventId: event.id, ...vip }))))
+    expect(results.filter(([error]) => !error)).toHaveLength(1)
+    expect(results.filter(([error]) => ruleOf(error) === 'deal.name_taken')).toHaveLength(2)
+    expect((await c.deals.listByEvent({ eventId: event.id })).total).toBe(1)
+  })
+
+  test('deleting the event deletes its deals', async () => {
+    const c = authed()
+    const event = await c.events.create(newEvent)
+    const deal = await c.deals.create({ eventId: event.id, ...vip })
+    await c.events.delete({ id: event.id })
+    const [error] = await safe(c.deals.get({ id: deal.id }))
+    expect(isDefinedError(error) && error.code).toBe('NOT_FOUND')
   })
 })
 
